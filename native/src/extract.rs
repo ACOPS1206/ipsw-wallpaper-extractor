@@ -178,6 +178,7 @@ struct HashingWriter<'a, W> {
     bytes: u64,
     task: &'a Task,
     total: u64,
+    stage: String,
 }
 impl<W: Write> Write for HashingWriter<'_, W> {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
@@ -185,8 +186,7 @@ impl<W: Write> Write for HashingWriter<'_, W> {
         let n = self.writer.write(data)?;
         self.hash.update(&data[..n]);
         self.bytes += n as u64;
-        self.task
-            .progress("Extracting filesystem resource", self.bytes, self.total);
+        self.task.progress(&self.stage, self.bytes, self.total);
         Ok(n)
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -239,13 +239,14 @@ fn walk(
                     .join(safe_relative(&child)?);
                 let dest = out.join(&rel);
                 fs::create_dir_all(dest.parent().unwrap())?;
-                task.progress(&format!("Extracting {child}"), 0, entry.size);
+                task.progress(&format!("Preparing resource {child}"), 0, 0);
                 let mut writer = HashingWriter {
                     writer: BufWriter::with_capacity(1024 * 1024, File::create(&dest)?),
                     hash: Sha256::new(),
                     bytes: 0,
                     task,
                     total: entry.size,
+                    stage: format!("Extracting {child}"),
                 };
                 fs.read_file_to(&child, &mut writer)?;
                 writer.flush()?;
@@ -496,6 +497,11 @@ mod tests {
                 hex::encode(Sha256::digest(b"wallpaper-fixture"))
             );
             assert_eq!(assets[0].bytes, 17);
+            let progress = task.state.lock().unwrap();
+            assert_eq!(progress["stage"], "Extracting /example.png");
+            assert_eq!(progress["done"], 17);
+            assert_eq!(progress["total"], 17);
+            drop(progress);
             assert_eq!(
                 fs::read(output.join("assets/image-0/example.png")).unwrap(),
                 b"wallpaper-fixture"

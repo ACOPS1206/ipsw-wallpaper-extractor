@@ -87,6 +87,7 @@ class _HomeState extends State<Home> {
       'Opening authenticated Apple archive': 'Apple 암호화 아카이브 여는 중', 'Opening filesystem': '파일 시스템 여는 중',
       'Packaging extracted resources': '추출한 리소스 묶는 중', 'Packaging resource': '리소스 묶는 중',
     };
+    if (value.startsWith('Preparing resource ')) return '리소스 검색·준비 중: ${value.substring(19)}';
     if (value.startsWith('Extracting ')) return '추출 중: ${value.substring(11)}';
     return translations[value] ?? value;
   }
@@ -249,7 +250,7 @@ class _HomeState extends State<Home> {
         Text(t('모델·버전 목록: IPSW.me · 실제 파일: Apple CDN\n서명 종료된 버전도 추출할 수 있습니다. 완료 후 ‘IPSW 파일에 저장’으로 내보내세요.', 'Catalog: IPSW.me · Files: Apple CDN\nUnsigned versions can also be extracted. After downloading, use “Save IPSW to Files” to export.')),
       ]),
       ExpansionTile(title: Text(t('고급 설정', 'Advanced settings')), children: [SwitchListTile(value: verifyDisk, onChanged: enabled ? (value) => setState(() => verifyDisk = value) : null, title: Text(t('UDIF 디스크 전체 CRC 검증', 'Verify entire UDIF data fork CRC')), subtitle: Text(t('기본: 필요한 블록만 읽기. 전체 검증을 켜면 디스크 전체를 읽어 더 오래 걸립니다. AEA 인증은 항상 유지됩니다.', 'Default: read required blocks only. Full verification reads the entire disk and takes longer. AEA authentication stays enabled.'))), Padding(padding: const EdgeInsets.all(16), child: TextField(controller: keyController, enabled: enabled, obscureText: true, decoration: InputDecoration(labelText: t('AEA 대칭키 (선택)', 'AEA symmetric key (optional)'), helperText: t('기본값: Apple의 공개 FCS 키 자동 조회', 'Default: retrieve Apple’s public FCS key automatically'))))]),
-      panel(t('진행 상태', 'Progress'), [Text(saving ? t('파일 저장 중…', 'Saving file…') : stage), if (busy || saving) ...[const SizedBox(height: 12), LinearProgressIndicator(value: saving ? null : progress), if (busy) TextButton(onPressed: job == null ? null : () => core!.cancel(job!), child: Text(t('취소', 'Cancel')))]]),
+      panel(t('진행 상태', 'Progress'), [Text(saving ? t('파일 저장 중…', 'Saving file…') : stage), if (busy || saving) ...[const SizedBox(height: 12), LinearProgressIndicator(value: saving ? null : progress), if (busy && progress != null) Text(t('현재 단계 ${(progress! * 100).toStringAsFixed(1)}%', 'Current stage ${(progress! * 100).toStringAsFixed(1)}%')), if (busy) TextButton(onPressed: job == null ? null : () => core!.cancel(job!), child: Text(t('취소', 'Cancel')))]]),
       if (archive != null) panel(t('추출 결과', 'Extracted resources'), [
         FilledButton.icon(onPressed: !busy && !saving ? () => saveFile(archive!) : null, icon: const Icon(Icons.ios_share), label: Text(t('ZIP 저장 / 공유', 'Save / share ZIP'))),
         const SizedBox(height: 12), Text(t('PNG·JPEG 등은 원본 이미지입니다. EXR·USDZ·Metal·CAML·Assets.car는 추가 렌더링 또는 해석이 필요한 리소스입니다.', 'PNG and JPEG files are original images. EXR, USDZ, Metal, CAML and Assets.car resources require additional rendering or decoding.')),

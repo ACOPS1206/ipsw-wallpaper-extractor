@@ -74,8 +74,6 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "apfs"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af8877cfe5846d36058aeed2c780dafb33a2acd5de4b163afc01e4931c4fed0"
 dependencies = [
  "byteorder",
  "cmpfs",

@@ -40,3 +40,10 @@ hfsplus = { version = "=0.4.0", features = ["testutil"] }
 [profile.release]
 lto = "thin"
 strip = "debuginfo"
+
+[patch.crates-io]
+apfs = { path = "vendor/apfs" }
+
+[workspace]
+resolver = "3"
+members = ["vendor/apfs"]

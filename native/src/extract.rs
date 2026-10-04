@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{BufWriter, Read, Write},
     path::{Component, Path, PathBuf},
@@ -393,6 +393,7 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
     // Older firmware may store directly accessible wallpaper files in the ZIP.
     let mut seen = BTreeSet::new();
     for i in 0..zip.len() {
+        task.check()?;
         let mut entry = zip.by_index(i)?;
         let name = entry.name().to_string();
         if !selected(&name) || entry.is_dir() {
@@ -483,7 +484,8 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
         )
         .with_context(|| format!("Failed to open filesystem image: {image}"))?;
         if let Some(set) = resources.include.clone() {
-            // Open only selected files; do not walk every resource directory again.
+            // Open only selected files; reuse each parent directory listing.
+            let mut directories = BTreeMap::new();
             for id in set.iter().filter(|id| id.starts_with(&prefix)) {
                 let child = format!("/{}", id.strip_prefix(&prefix).unwrap());
                 if !selected(&child) {
@@ -492,9 +494,11 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
                 let relative = safe_relative(&child)?;
                 let parent = format!("/{}", relative.parent().unwrap().to_string_lossy());
                 let name = relative.file_name().unwrap().to_string_lossy();
-                let entry = filesystem
-                    .list_directory(&parent)?
-                    .into_iter()
+                if !directories.contains_key(&parent) {
+                    directories.insert(parent.clone(), filesystem.list_directory(&parent)?);
+                }
+                let entry = directories[&parent]
+                    .iter()
                     .find(|entry| entry.name == name && entry.kind == dpp::FsEntryKind::File)
                     .context("Selected resource no longer exists")?;
                 resources.filesystem_file(&mut filesystem, &source, &child, entry.size)?;

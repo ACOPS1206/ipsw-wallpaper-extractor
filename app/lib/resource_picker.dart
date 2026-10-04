@@ -72,7 +72,7 @@ class _ResourcePickerState extends State<ResourcePicker> {
       })),
       if (previewName != null && !keyboard) ...[
         Text(previewName!, maxLines: 1, overflow: TextOverflow.ellipsis),
-        SizedBox(height: compact ? 100 : 150, child: loadingPreview ? const Center(child: CircularProgressIndicator()) : previewPath != null ? Image.file(File(previewPath!), fit: BoxFit.contain, errorBuilder: (_, error, stack) => Center(child: Text(t('이 이미지 형식은 미리보기를 지원하지 않습니다.', 'This image cannot be previewed.')))) : Center(child: Text(previewError ?? ''))),
+        SizedBox(height: compact ? 100 : 150, child: loadingPreview ? const Center(child: CircularProgressIndicator()) : previewPath != null ? Image.file(File(previewPath!), cacheWidth: 1200, fit: BoxFit.contain, errorBuilder: (_, error, stack) => Center(child: Text(t('이 이미지 형식은 미리보기를 지원하지 않습니다.', 'This image cannot be previewed.')))) : Center(child: Text(previewError ?? ''))),
       ],
       SwitchListTile(contentPadding: EdgeInsets.zero, value: flat, onChanged: loadingPreview ? null : (value) => setState(() => flat = value), title: Text(t('모든 파일을 한 폴더에 모으기', 'Put all files in one folder')), subtitle: compact ? null : Text(flat ? t('assets 폴더에 저장 · 같은 이름은 번호를 붙입니다. 원본 경로는 report.json에 남습니다.', 'Save in assets; duplicate names get a number. report.json retains original paths.') : t('원본 폴더 구조 유지', 'Keep original folder structure'))),
       if (!compact) Text(t('미리보기는 선택한 이미지 하나만 읽습니다. EXR·USDZ·CAML·Assets.car 렌더링은 지원하지 않습니다.', 'Preview reads only the requested image. EXR, USDZ, CAML and Assets.car rendering is unavailable.'), style: Theme.of(context).textTheme.bodySmall),

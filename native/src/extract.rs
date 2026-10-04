@@ -358,7 +358,7 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
             task,
             v["verifyDisk"].as_bool().unwrap_or(false),
         )
-        .with_context(|| format!("Unsupported or encrypted filesystem image: {image}"))?;
+        .with_context(|| format!("Failed to open filesystem image: {image}"))?;
         let source = format!("image-{i}");
         for root in ROOTS {
             if filesystem.exists(root)? {

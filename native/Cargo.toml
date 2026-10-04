@@ -42,8 +42,9 @@ lto = "thin"
 strip = "debuginfo"
 
 [patch.crates-io]
+aea-tools = { path = "vendor/aea-tools" }
 apfs = { path = "vendor/apfs" }
 
 [workspace]
 resolver = "3"
-members = ["vendor/apfs"]
+members = ["vendor/apfs", "vendor/aea-tools"]

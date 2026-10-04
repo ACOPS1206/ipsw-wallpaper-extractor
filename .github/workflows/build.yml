@@ -23,6 +23,7 @@ jobs:
           workspaces: native
       - run: cargo test --locked --manifest-path native/Cargo.toml
       - run: cargo test --locked --manifest-path native/Cargo.toml -p apfs --lib
+      - run: cargo test --locked --manifest-path native/Cargo.toml -p aea-tools --lib
       - run: cargo clippy --locked --manifest-path native/Cargo.toml --all-targets -- -D warnings
       - uses: subosito/flutter-action@v2
         with:

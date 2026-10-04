@@ -1,0 +1,21 @@
+name: ipsw_wallpaper_extractor
+description: Extract original wallpaper resources from Apple IPSWs on your device.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.1.4
+  file_picker: 10.3.10
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  share_plus: ^12.0.1
+  cross_file: ^0.3.5
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

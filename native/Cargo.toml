@@ -1,0 +1,33 @@
+[package]
+name = "wallpaper_core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[[bin]]
+name = "ipsw-wallpaper"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zip = { version = "4", default-features = false, features = ["deflate"] }
+plist = "1"
+tempfile = "3"
+dpp = "=0.6.0"
+aea-tools = "=0.1.1"
+base64 = "0.22"
+hpke = { version = "0.13", default-features = false, features = ["std", "p256"] }
+p256 = { version = "0.13", features = ["pkcs8", "pem"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+sha2 = "0.10"
+sha1 = "0.10"
+hex = "0.4"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

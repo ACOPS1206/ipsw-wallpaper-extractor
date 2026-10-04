@@ -1,0 +1,162 @@
+name: Build native apps
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - run: cargo test --locked --manifest-path native/Cargo.toml
+      - run: cargo clippy --locked --manifest-path native/Cargo.toml --all-targets -- -D warnings
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: python3 scripts/scaffold.py
+      - run: flutter analyze
+        working-directory: app
+      - run: flutter test
+        working-directory: app
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            artifact: Linux-x64
+          - os: windows-2022
+            platform: windows
+            artifact: Windows-x64
+          - os: macos-15
+            platform: macos
+            artifact: macOS-arm64
+          - os: macos-15-intel
+            platform: macos
+            artifact: macOS-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: python scripts/scaffold.py
+      - run: cargo build --locked --release --manifest-path native/Cargo.toml
+      - name: Stage native engine
+        shell: python
+        run: |
+          import pathlib, shutil
+          dest = pathlib.Path('app/native'); dest.mkdir(exist_ok=True)
+          for pattern in ('*.dll', '*.so', '*.dylib'):
+              for source in pathlib.Path('native/target/release').glob(pattern): shutil.copy2(source, dest)
+      - run: flutter build ${{ matrix.platform }} --release
+        working-directory: app
+      - name: Package macOS
+        if: matrix.platform == 'macos'
+        run: |
+          APP=$(find app/build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)
+          cp app/native/libwallpaper_core.dylib "$APP/Contents/Frameworks/"
+          codesign --force --deep --sign - "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" macOS.zip
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'macos'
+        with:
+          name: ${{ matrix.artifact }}
+          path: macOS.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'linux'
+        with:
+          name: ${{ matrix.artifact }}
+          path: app/build/linux/x64/release/bundle/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'windows'
+        with:
+          name: ${{ matrix.artifact }}
+          path: app/build/windows/x64/runner/Release/
+          if-no-files-found: error
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'ndk;28.2.13676358'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: python3 scripts/scaffold.py
+      - run: cargo install cargo-ndk --locked
+      - name: Build native libraries
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../app/android/app/src/main/jniLibs build --locked --release --lib
+        working-directory: native
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+      - run: flutter build apk --release --target-platform android-arm64,android-x64
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Android-APK
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: python3 scripts/scaffold.py
+      - run: cargo build --locked --release --lib --target aarch64-apple-ios --manifest-path native/Cargo.toml
+      - run: mkdir -p app/native && cp native/target/aarch64-apple-ios/release/libwallpaper_core.a app/native/
+      - run: flutter build ios --release --no-codesign
+        working-directory: app
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R app/build/ios/iphoneos/Runner.app Payload/
+          zip -qr IPSW-Wallpaper-Extractor-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iOS-unsigned-IPA
+          path: IPSW-Wallpaper-Extractor-unsigned.ipa
+          if-no-files-found: error

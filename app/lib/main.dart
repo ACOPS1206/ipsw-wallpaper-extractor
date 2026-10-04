@@ -4,7 +4,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
-import 'package:cross_file/cross_file.dart';
 import 'core.dart';
 
 void main() => runApp(const WallpaperApp());
@@ -99,7 +98,7 @@ class _HomeState extends State<Home> {
         if(info!=null)...[
           const SizedBox(height:8),Text('iOS ${info!['version']??''} · ${info!['build']??''}'),
           Text('파일 시스템 ${((info!['imageBytes'] as num)/1073741824).toStringAsFixed(1)} GiB'),
-          const Text('추출 중 임시 공간은 위 크기의 수 배가 필요할 수 있습니다.'),
+          const Text('저장 방식에 따라 추가 임시 공간이 필요할 수 있습니다.'),
           if((info!['boards'] as List).isNotEmpty)DropdownButtonFormField<String>(initialValue:board,decoration:const InputDecoration(labelText:'기기 보드 (기본: 전체)'),items:[const DropdownMenuItem<String>(value:null,child:Text('전체')),for(final b in info!['boards'] as List)DropdownMenuItem(value:b as String,child:Text(b))],onChanged:enabled?(v)=>setState(()=>board=v):null),
           const SizedBox(height:12),FilledButton.icon(onPressed:enabled?extract:null,icon:const Icon(Icons.unarchive),label:const Text('원본 배경 추출')),
         ],

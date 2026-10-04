@@ -1888,6 +1888,7 @@ dependencies = [
  "crc32fast",
  "dpp",
  "hex",
+ "hfsplus",
  "hpke",
  "p256",
  "plist",

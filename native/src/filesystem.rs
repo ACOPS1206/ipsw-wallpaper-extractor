@@ -9,6 +9,59 @@ use std::{
 pub trait ReadSeek: Read + Seek + Unpin {}
 impl<T: Read + Seek + Unpin> ReadSeek for T {}
 type Reader = Box<dyn ReadSeek>;
+/// A stored ZIP entry exposed as a bounded file without duplicating the IPSW.
+pub struct FileSlice {
+    file: File,
+    start: u64,
+    length: u64,
+    position: u64,
+}
+impl FileSlice {
+    pub fn new(file: File, start: u64, length: u64) -> Result<Self> {
+        if start
+            .checked_add(length)
+            .is_none_or(|n| n > file.metadata().map(|m| m.len()).unwrap_or(0))
+        {
+            bail!("ZIP entry is outside the input file");
+        }
+        Ok(Self {
+            file,
+            start,
+            length,
+            position: 0,
+        })
+    }
+}
+impl Read for FileSlice {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = buf.len().min((self.length - self.position) as usize);
+        if n == 0 {
+            return Ok(0);
+        }
+        self.file
+            .seek(SeekFrom::Start(self.start + self.position))?;
+        let read = self.file.read(&mut buf[..n])?;
+        self.position += read as u64;
+        Ok(read)
+    }
+}
+impl Seek for FileSlice {
+    fn seek(&mut self, seek: SeekFrom) -> std::io::Result<u64> {
+        let position = match seek {
+            SeekFrom::Start(n) => n as i128,
+            SeekFrom::Current(n) => self.position as i128 + n as i128,
+            SeekFrom::End(n) => self.length as i128 + n as i128,
+        };
+        if position < 0 || position > self.length as i128 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Seek outside ZIP entry",
+            ));
+        }
+        self.position = position as u64;
+        Ok(self.position)
+    }
+}
 pub enum Filesystem {
     Apfs(dpp::apfs::ApfsVolume<Reader>),
     Hfs(Box<dpp::hfsplus::HfsVolume<Reader>>),
@@ -163,5 +216,48 @@ impl Write for CheckedWriter<'_> {
     }
     fn flush(&mut self) -> std::io::Result<()> {
         self.file.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn slice_cannot_escape_zip_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("zip");
+        std::fs::write(&path, b"prefixCONTENTsuffix").unwrap();
+        let mut slice = FileSlice::new(File::open(path).unwrap(), 6, 7).unwrap();
+        let mut data = Vec::new();
+        slice.read_to_end(&mut data).unwrap();
+        assert_eq!(data, b"CONTENT");
+        assert!(slice.seek(SeekFrom::End(1)).is_err());
+        assert!(slice.seek(SeekFrom::Start(8)).is_err());
+        slice.seek(SeekFrom::Start(0)).unwrap();
+        let mut first = [0; 3];
+        slice.read_exact(&mut first).unwrap();
+        assert_eq!(&first, b"CON");
+    }
+    #[test]
+    fn raw_hfs_and_udif_read_identical_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut builder = hfsplus::testutil::HfsPlusImageBuilder::new();
+        builder.add_file("wallpaper.png", b"image-data", 0o644);
+        let raw = builder.build();
+        let dmg = temp.path().join("test.dmg");
+        dpp::udif::DmgBuilder::new()
+            .compression(dpp::udif::CompressionMethod::Zlib)
+            .add_partition("Apple_HFS", raw.clone())
+            .build(&dmg)
+            .unwrap();
+        for reader in [
+            Box::new(std::io::Cursor::new(raw)) as Reader,
+            Box::new(File::open(dmg).unwrap()) as Reader,
+        ] {
+            let mut fs = Filesystem::open(reader, temp.path(), &Task::new()).unwrap();
+            let mut bytes = Vec::new();
+            fs.read_file_to("/wallpaper.png", &mut bytes).unwrap();
+            assert_eq!(bytes, b"image-data");
+        }
     }
 }

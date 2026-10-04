@@ -145,7 +145,7 @@ pub fn inspect(v: &Value) -> Result<Value> {
         })
         .collect();
     Ok(
-        json!({"version":d.get("ProductVersion").and_then(|v|v.as_string()),"build":d.get("ProductBuildVersion").and_then(|v|v.as_string()),"images":images,"boards":boards,"imageBytes":bytes,"note":"Temporary disk usage may be several times imageBytes; AEA and UDIF are decoded to temporary files."}),
+        json!({"version":d.get("ProductVersion").and_then(|v|v.as_string()),"build":d.get("ProductBuildVersion").and_then(|v|v.as_string()),"images":images,"boards":boards,"imageBytes":bytes,"note":"Stored ZIP filesystem entries and raw AEA/APFS are read in place. Compressed ZIP or UDIF images may need large temporary files."}),
     )
 }
 fn copy<R: Read, W: Write>(
@@ -280,27 +280,34 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
         let mut entry = zip
             .by_name(image)
             .with_context(|| format!("Missing filesystem image: {image}"))?;
-        let size = entry.size();
-        copy(
-            &mut entry,
-            &mut File::create(&archive)?,
-            size,
-            task,
-            "Unpacking filesystem image",
-        )?;
-        drop(entry);
-        let dmg = if image.ends_with(".aea") {
-            let dmg = work.path().join(format!("image-{i}.dmg"));
-            aea::decrypt(&archive, &dmg, v["aeaKey"].as_str(), task)?;
-            fs::remove_file(&archive)?;
-            dmg
+        let mut reader: Box<dyn crate::filesystem::ReadSeek> = if entry.compression()
+            == zip::CompressionMethod::Stored
+            && entry.size() == entry.compressed_size()
+        {
+            Box::new(crate::filesystem::FileSlice::new(
+                File::open(input)?,
+                entry.data_start(),
+                entry.size(),
+            )?)
         } else {
-            archive
+            let size = entry.size();
+            copy(
+                &mut entry,
+                &mut File::create(&archive)?,
+                size,
+                task,
+                "Unpacking filesystem image",
+            )?;
+            Box::new(File::open(&archive)?)
         };
+        drop(entry);
+        if image.ends_with(".aea") {
+            task.progress("Opening authenticated Apple archive", 0, 0);
+            reader = aea::open(reader, v["aeaKey"].as_str(), task)?;
+        }
         task.progress("Opening filesystem", 0, 0);
-        let mut filesystem =
-            crate::filesystem::Filesystem::open(Box::new(File::open(&dmg)?), work.path(), task)
-                .with_context(|| format!("Unsupported or encrypted filesystem image: {image}"))?;
+        let mut filesystem = crate::filesystem::Filesystem::open(reader, work.path(), task)
+            .with_context(|| format!("Unsupported or encrypted filesystem image: {image}"))?;
         let source = format!("image-{i}");
         for root in ROOTS {
             if filesystem.exists(root)? {
@@ -328,7 +335,13 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
             }
         }
         drop(filesystem);
-        fs::remove_file(dmg)?;
+        if archive.exists() {
+            fs::remove_file(archive)?;
+        }
+        let partition = work.path().join("partition.raw");
+        if partition.exists() {
+            fs::remove_file(partition)?;
+        }
     }
     if assets.is_empty() {
         bail!("No wallpaper resources found in the selected filesystem images");

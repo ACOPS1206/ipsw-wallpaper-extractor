@@ -5,9 +5,7 @@ use hpke::{Deserializable, OpModeR, aead::AesGcm256, kdf::HkdfSha256, kem::DhP25
 use p256::pkcs8::DecodePrivateKey;
 use std::{
     collections::HashMap,
-    fs::File,
-    io::{Read, Write},
-    path::Path,
+    io::{Read, Seek, SeekFrom},
 };
 
 fn fields(blob: &[u8]) -> Result<HashMap<String, String>> {
@@ -36,8 +34,7 @@ fn fields(blob: &[u8]) -> Result<HashMap<String, String>> {
     }
     Ok(result)
 }
-pub fn key(path: &Path, override_key: Option<&str>, task: &Task) -> Result<Vec<u8>> {
-    let mut file = File::open(path)?;
+pub fn key<R: Read>(file: &mut R, override_key: Option<&str>, task: &Task) -> Result<Vec<u8>> {
     let mut header = [0u8; 12];
     file.read_exact(&mut header)?;
     if &header[..4] != b"AEA1" || header[4..8] != [1, 0, 0, 0] {
@@ -97,29 +94,15 @@ pub fn key(path: &Path, override_key: Option<&str>, task: &Task) -> Result<Vec<u
     }
     Ok(key)
 }
-pub fn decrypt(input: &Path, output: &Path, override_key: Option<&str>, task: &Task) -> Result<()> {
-    let key = key(input, override_key, task)?;
-    let mut reader = aea_tools::reader::AeaReader::new(&key, File::open(input)?)?;
-    let total = reader.get_decompressed_length()?;
-    let mut stream = aea_tools::stream::AeaStream::new(reader)?;
-    let mut file = File::create(output)?;
-    let mut buf = vec![0u8; 1024 * 1024];
-    let mut done = 0;
-    loop {
-        task.check()?;
-        let n = stream.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        file.write_all(&buf[..n])?;
-        done += n as u64;
-        task.progress("Decrypting Apple archive", done, total);
-    }
-    if done != total {
-        bail!("Decrypted archive size mismatch");
-    }
-    file.sync_all()?;
-    Ok(())
+pub fn open(
+    mut input: Box<dyn crate::filesystem::ReadSeek>,
+    override_key: Option<&str>,
+    task: &Task,
+) -> Result<Box<dyn crate::filesystem::ReadSeek>> {
+    let key = key(&mut input, override_key, task)?;
+    input.seek(SeekFrom::Start(0))?;
+    let reader = aea_tools::reader::AeaReader::new(&key, input)?;
+    Ok(Box::new(aea_tools::stream::AeaStream::new(reader)?))
 }
 #[cfg(test)]
 mod tests {

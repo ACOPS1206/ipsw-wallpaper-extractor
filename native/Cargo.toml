@@ -29,6 +29,9 @@ sha1 = "0.10"
 hex = "0.4"
 crc32fast = "1"
 
+[dev-dependencies]
+hfsplus = { version = "=0.4.0", features = ["testutil"] }
+
 [profile.release]
 lto = "thin"
 strip = "debuginfo"

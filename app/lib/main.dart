@@ -56,7 +56,7 @@ class _HomeState extends State<Home> {
   String? engineError, input, archive, device, deviceName, firmwareUrl, board;
   Map<String, dynamic>? info;
   List<dynamic> devices = [], firmwares = [], assets = [], warnings = [];
-  bool busy = false, saving = false;
+  bool busy = false, saving = false, verifyDisk = false;
   int? job;
   String status = 'idle', nativeStage = 'Preparing', failure = '';
   double? progress;
@@ -79,7 +79,7 @@ class _HomeState extends State<Home> {
   String translateStage(String value) {
     if (!widget.korean) return value;
     const translations = {
-      'Preparing': '준비 중', 'Loading device catalog': '기기 목록 불러오는 중',
+      'Preparing': '준비 중', 'Opening disk image on demand': '필요한 디스크 블록만 여는 중', 'Extracting filesystem resource': '파일 시스템 리소스 추출 중', 'Loading device catalog': '기기 목록 불러오는 중',
       'Loading firmware catalog': '버전 목록 불러오는 중', 'Downloading from Apple CDN': 'Apple CDN에서 다운로드 중',
       'Verifying SHA-1': 'SHA-1 검증 중', 'Verifying disk image': '디스크 이미지 검증 중',
       'Decoding disk image': '디스크 이미지 해석 중', 'Extracting ZIP resource': 'ZIP 리소스 추출 중',
@@ -130,7 +130,7 @@ class _HomeState extends State<Home> {
       final base = await getApplicationDocumentsDirectory();
       if (!mounted) return;
       final folder = p.join(base.path, 'wallpapers-${DateTime.now().millisecondsSinceEpoch}');
-      final result = await run({'op': 'extract', 'input': input, 'output': folder, if (board != null) 'board': board, if (keyController.text.trim().isNotEmpty) 'aeaKey': keyController.text.trim()});
+      final result = await run({'op': 'extract', 'input': input, 'output': folder, 'verifyDisk': verifyDisk, if (board != null) 'board': board, if (keyController.text.trim().isNotEmpty) 'aeaKey': keyController.text.trim()});
       if (result != null && mounted) setState(() { archive = result['archive'] as String; assets = result['report']['assets'] as List<dynamic>; warnings = result['report']['warnings'] as List<dynamic>; status = 'extracted'; });
     } catch (e) { toast(t('추출 실패: $e', 'Extraction failed: $e')); }
   }
@@ -248,7 +248,7 @@ class _HomeState extends State<Home> {
         const SizedBox(height: 12),
         Text(t('모델·버전 목록: IPSW.me · 실제 파일: Apple CDN\n서명 종료된 버전도 추출할 수 있습니다. 완료 후 ‘IPSW 파일에 저장’으로 내보내세요.', 'Catalog: IPSW.me · Files: Apple CDN\nUnsigned versions can also be extracted. After downloading, use “Save IPSW to Files” to export.')),
       ]),
-      ExpansionTile(title: Text(t('고급 설정', 'Advanced settings')), children: [Padding(padding: const EdgeInsets.all(16), child: TextField(controller: keyController, enabled: enabled, obscureText: true, decoration: InputDecoration(labelText: t('AEA 대칭키 (선택)', 'AEA symmetric key (optional)'), helperText: t('기본값: Apple의 공개 FCS 키 자동 조회', 'Default: retrieve Apple’s public FCS key automatically'))))]),
+      ExpansionTile(title: Text(t('고급 설정', 'Advanced settings')), children: [SwitchListTile(value: verifyDisk, onChanged: enabled ? (value) => setState(() => verifyDisk = value) : null, title: Text(t('UDIF 디스크 전체 CRC 검증', 'Verify entire UDIF data fork CRC')), subtitle: Text(t('기본: 필요한 블록만 읽기. 전체 검증을 켜면 디스크 전체를 읽어 더 오래 걸립니다. AEA 인증은 항상 유지됩니다.', 'Default: read required blocks only. Full verification reads the entire disk and takes longer. AEA authentication stays enabled.'))), Padding(padding: const EdgeInsets.all(16), child: TextField(controller: keyController, enabled: enabled, obscureText: true, decoration: InputDecoration(labelText: t('AEA 대칭키 (선택)', 'AEA symmetric key (optional)'), helperText: t('기본값: Apple의 공개 FCS 키 자동 조회', 'Default: retrieve Apple’s public FCS key automatically'))))]),
       panel(t('진행 상태', 'Progress'), [Text(saving ? t('파일 저장 중…', 'Saving file…') : stage), if (busy || saving) ...[const SizedBox(height: 12), LinearProgressIndicator(value: saving ? null : progress), if (busy) TextButton(onPressed: job == null ? null : () => core!.cancel(job!), child: Text(t('취소', 'Cancel')))]]),
       if (archive != null) panel(t('추출 결과', 'Extracted resources'), [
         FilledButton.icon(onPressed: !busy && !saving ? () => saveFile(archive!) : null, icon: const Icon(Icons.ios_share), label: Text(t('ZIP 저장 / 공유', 'Save / share ZIP'))),

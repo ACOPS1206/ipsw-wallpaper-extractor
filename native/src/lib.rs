@@ -2,6 +2,8 @@ mod aea;
 mod extract;
 mod filesystem;
 mod network;
+mod read_cache;
+mod udif;
 
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
@@ -15,13 +17,13 @@ use std::{
 };
 
 pub struct Task {
-    pub cancelled: AtomicBool,
+    pub cancelled: Arc<AtomicBool>,
     pub state: Mutex<Value>,
 }
 impl Task {
     pub fn new() -> Self {
         Self {
-            cancelled: AtomicBool::new(false),
+            cancelled: Arc::new(AtomicBool::new(false)),
             state: Mutex::new(
                 json!({"status":"running", "stage":"Preparing", "done":0, "total":0}),
             ),

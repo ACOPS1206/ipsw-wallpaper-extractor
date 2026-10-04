@@ -28,6 +28,11 @@ sha2 = "0.10"
 sha1 = "0.10"
 hex = "0.4"
 crc32fast = "1"
+lru = "0.16"
+flate2 = "1"
+bzip2 = "0.6"
+lzfse_rust = "0.2"
+lzma-rust2 = "0.20"
 
 [dev-dependencies]
 hfsplus = { version = "=0.4.0", features = ["testutil"] }

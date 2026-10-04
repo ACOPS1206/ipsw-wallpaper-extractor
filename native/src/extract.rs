@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     fs::{self, File},
-    io::{Read, Write},
+    io::{BufWriter, Read, Write},
     path::{Component, Path, PathBuf},
 };
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -171,6 +171,49 @@ fn copy<R: Read, W: Write>(
     }
     Ok((done, hex::encode(hash.finalize())))
 }
+// Compute SHA-256 while the filesystem writes; no second read of each asset.
+struct HashingWriter<'a, W> {
+    writer: W,
+    hash: Sha256,
+    bytes: u64,
+    task: &'a Task,
+    total: u64,
+}
+impl<W: Write> Write for HashingWriter<'_, W> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        self.task.check().map_err(std::io::Error::other)?;
+        let n = self.writer.write(data)?;
+        self.hash.update(&data[..n]);
+        self.bytes += n as u64;
+        self.task
+            .progress("Extracting filesystem resource", self.bytes, self.total);
+        Ok(n)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.flush()
+    }
+}
+fn stream_copy<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    total: u64,
+    task: &Task,
+    stage: &str,
+) -> Result<u64> {
+    let mut buffer = vec![0; 1024 * 1024];
+    let mut done = 0;
+    loop {
+        task.check()?;
+        let n = reader.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buffer[..n])?;
+        done += n as u64;
+        task.progress(stage, done, total);
+    }
+    Ok(done)
+}
 fn walk(
     fs: &mut crate::filesystem::Filesystem,
     source: &str,
@@ -197,14 +240,17 @@ fn walk(
                 let dest = out.join(&rel);
                 fs::create_dir_all(dest.parent().unwrap())?;
                 task.progress(&format!("Extracting {child}"), 0, entry.size);
-                fs.read_file_to(&child, &mut File::create(&dest)?)?;
-                let (bytes, sha256) = copy(
-                    &mut File::open(&dest)?,
-                    &mut std::io::sink(),
-                    entry.size,
+                let mut writer = HashingWriter {
+                    writer: BufWriter::with_capacity(1024 * 1024, File::create(&dest)?),
+                    hash: Sha256::new(),
+                    bytes: 0,
                     task,
-                    "Hashing extracted resource",
-                )?;
+                    total: entry.size,
+                };
+                fs.read_file_to(&child, &mut writer)?;
+                writer.flush()?;
+                let bytes = writer.bytes;
+                let sha256 = hex::encode(writer.hash.finalize());
                 assets.push(Asset {
                     source: child.clone(),
                     path: rel.to_string_lossy().replace('\\', "/"),
@@ -291,7 +337,7 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
             )?)
         } else {
             let size = entry.size();
-            copy(
+            stream_copy(
                 &mut entry,
                 &mut File::create(&archive)?,
                 size,
@@ -306,8 +352,12 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
             reader = aea::open(reader, v["aeaKey"].as_str(), task)?;
         }
         task.progress("Opening filesystem", 0, 0);
-        let mut filesystem = crate::filesystem::Filesystem::open(reader, work.path(), task)
-            .with_context(|| format!("Unsupported or encrypted filesystem image: {image}"))?;
+        let mut filesystem = crate::filesystem::Filesystem::open(
+            reader,
+            task,
+            v["verifyDisk"].as_bool().unwrap_or(false),
+        )
+        .with_context(|| format!("Unsupported or encrypted filesystem image: {image}"))?;
         let source = format!("image-{i}");
         for root in ROOTS {
             if filesystem.exists(root)? {
@@ -353,17 +403,20 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
         warnings.push("Assets.car was preserved; catalog decoding is not implemented.");
     }
     warnings.push("Raw extraction does not create PosterBoard databases or install wallpapers. Universal PNG rendering and .tendies conversion are not implemented.");
-    let report = json!({"schemaVersion":1,"input":input.file_name(),"mode":"original-resources","images":images,"assets":assets,"warnings":warnings});
+    let report = json!({"schemaVersion":1,"input":input.file_name(),"mode":"original-resources","udifFullCrcRequested":v["verifyDisk"].as_bool().unwrap_or(false),"images":images,"assets":assets,"warnings":warnings});
     fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
     task.progress("Packaging extracted resources", 0, assets.len() as u64);
-    let mut archive = ZipWriter::new(File::create(out.join("wallpapers.zip"))?);
+    let mut archive = ZipWriter::new(BufWriter::with_capacity(
+        1024 * 1024,
+        File::create(out.join("wallpapers.zip"))?,
+    ));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     archive.start_file("report.json", options)?;
     std::io::copy(&mut File::open(out.join("report.json"))?, &mut archive)?;
     for (i, asset) in assets.iter().enumerate() {
         task.check()?;
         archive.start_file(&asset.path, options)?;
-        copy(
+        stream_copy(
             &mut File::open(out.join(&asset.path))?,
             &mut archive,
             asset.bytes,
@@ -376,7 +429,10 @@ pub fn extract(v: &Value, task: &Task) -> Result<Value> {
             assets.len() as u64,
         );
     }
-    archive.finish()?.sync_all()?;
+    let mut finished = archive.finish()?;
+    finished.flush()?;
+    finished.get_ref().sync_all()?;
+    drop(finished);
     task.check()?;
     fs::rename(out, output)?;
     Ok(json!({"output":output,"archive":output.join("wallpapers.zip"),"report":report}))
@@ -403,6 +459,48 @@ mod tests {
             "System/Library/ExtensionKit/Extensions/Camera.appex/image.png"
         ));
         assert!(!selected("Library/WallpaperEvil/image.png"));
+    }
+    #[test]
+    fn filesystem_writes_hash_correct_bytes_in_both_verification_modes() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut builder = hfsplus::testutil::HfsPlusImageBuilder::new();
+        builder.add_file("example.png", b"wallpaper-fixture", 0o644);
+        let disk = temp.path().join("disk.dmg");
+        dpp::udif::DmgBuilder::new()
+            .compression(dpp::udif::CompressionMethod::Zlib)
+            .add_partition("Apple_HFS", builder.build())
+            .build(&disk)
+            .unwrap();
+        for verify in [false, true] {
+            let task = Task::new();
+            let mut filesystem = crate::filesystem::Filesystem::open(
+                Box::new(File::open(&disk).unwrap()),
+                &task,
+                verify,
+            )
+            .unwrap();
+            let output = temp.path().join(format!("out-{verify}"));
+            let mut assets = Vec::new();
+            walk(
+                &mut filesystem,
+                "image-0",
+                "/",
+                &output,
+                &mut assets,
+                &task,
+                0,
+            )
+            .unwrap();
+            assert_eq!(
+                assets[0].sha256,
+                hex::encode(Sha256::digest(b"wallpaper-fixture"))
+            );
+            assert_eq!(assets[0].bytes, 17);
+            assert_eq!(
+                fs::read(output.join("assets/image-0/example.png")).unwrap(),
+                b"wallpaper-fixture"
+            );
+        }
     }
     #[test]
     fn end_to_end_direct_zip() {

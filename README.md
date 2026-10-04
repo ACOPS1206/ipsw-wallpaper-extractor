@@ -31,8 +31,15 @@ Use the language menu in the app bar to switch between English and Korean. Origi
 - Apple의 공개 FCS 서버에서 AEA profile 1 키를 가져옵니다. 오프라인 사용은 사용자가 제공한 Base64 대칭키가 필요합니다. 기타 AEA 프로필과 구형 암호화 DMG는 지원하지 않습니다.
 - `/Library/Wallpaper`, `/System/Library/Wallpaper`, ProceduralWallpaper, WallpaperKit, Poster 확장 묶음의 파일과 디렉터리 구조를 보존합니다. 심볼릭 링크는 따라가지 않습니다. 새 출력 폴더만 사용하고 실패 시 임시 추출 결과를 정리합니다.
 - **원본 PNG/JPEG/HEIF 추출과 셰이더 배경의 완성된 PNG 생성은 다른 기능입니다.** EXR·USDZ·Metal·CAML·Assets.car는 보존하지만 범용 렌더링, Assets.car 디코딩, `.tendies` 변환과 배경 설치는 아직 구현되지 않았습니다. 반사광·자이로 효과를 원본 PNG 하나로 추출했다고 표시하지 않습니다.
-- ZIP에 압축 없이 저장된 파일 시스템과 그 안의 AEA/원시 APFS는 필요한 부분만 읽으며 전체 디스크 이미지를 복사·복호화하지 않습니다. ZIP 압축 이미지 또는 UDIF 컨테이너는 추가 임시 파일이 필요합니다. 메모리 예산을 초과하는 64 MiB 이상의 UDIF 블록은 명확한 오류로 거부합니다. iOS 파일 선택기가 IPSW 사본을 만들 수도 있습니다. 모바일에서는 앱을 전면에 유지해야 하며 OS의 백그라운드 종료 후 자동 재개는 다운로드 부분 파일에만 적용됩니다.
-- 대용량 파일의 I/O는 1 MiB 단위로 처리합니다. APFS/UDIF와 AEA 파서가 내부적으로 사용하는 메모리·지원 포맷은 의존 라이브러리의 제약을 따릅니다. AEA 파서는 최대 128개 복호화 세그먼트를 캐시합니다. ZIP 저장 항목을 임의 접근으로 읽을 때 ZIP 전체 CRC는 계산하지 않으며 AEA 세그먼트 인증과 파일 시스템 객체 검증을 사용합니다. 진행 상태는 현재 단계 기준이며 취소가 긴 파서 호출 중에는 지연될 수 있습니다.
+- ZIP에 압축 없이 저장된 파일 시스템과 그 안의 AEA/원시 APFS는 필요한 부분만 읽으며 전체 디스크 이미지를 복사·복호화하지 않습니다. ZIP 압축 이미지는 추가 임시 파일이 필요합니다. UDIF 컨테이너는 필요한 블록만 해석하며 전체 파티션 임시 파일을 만들지 않습니다. 64 MiB를 초과하는 UDIF 압축 블록은 오류로 거부하며 큰 raw·zero-fill 영역은 할당 없이 읽습니다. iOS 파일 선택기가 IPSW 사본을 만들 수도 있습니다. 모바일에서는 앱을 전면에 유지해야 하며 OS의 백그라운드 종료 후 자동 재개는 다운로드 부분 파일에만 적용됩니다.
+- 대용량 파일의 I/O는 1 MiB 단위로 처리합니다. APFS/UDIF와 AEA 파서가 내부적으로 사용하는 메모리·지원 포맷은 의존 라이브러리의 제약을 따릅니다. AEA 파서는 최대 128개 복호화 세그먼트를 캐시합니다. UDIF 압축 블록 캐시는 최대 64 MiB, 파일 시스템 메타데이터 캐시는 최대 32 MiB입니다. ZIP 저장 항목을 임의 접근으로 읽을 때 ZIP 전체 CRC는 계산하지 않으며 AEA 세그먼트 인증과 파일 시스템 객체 검증을 사용합니다. 진행 상태는 현재 단계 기준이며 취소가 긴 파서 호출 중에는 지연될 수 있습니다.
+
+## 추출 속도
+
+- UDIF 전체 파티션을 풀지 않고 APFS/HFS+가 요청한 블록만 해석합니다. 읽지 않는 시스템 파일의 복호화·압축 해제와 임시 디스크 쓰기를 피합니다.
+- 파일 시스템 메타데이터를 캐시하고, 리소스 저장 중 SHA-256을 계산합니다. ZIP 생성과 압축 이미지 임시 저장 때 불필요한 SHA-256 재계산을 하지 않습니다.
+- 기본 모드는 UDIF 전체 data-fork CRC를 검사하지 않습니다. **고급 설정 → UDIF 디스크 전체 CRC 검증**에서 켜면 전체를 읽고 검사합니다. AEA 세그먼트 인증 및 APFS 객체 체크섬은 계속 적용되지만, 기본 모드는 사용하지 않는 디스크 영역의 손상까지 검사하지 않습니다. `report.json`에 전체 CRC 검증 요청 여부를 기록합니다.
+- Actual speed depends on image layout and storage. On-demand UDIF decoding avoids materializing the entire partition. Enable **Verify entire UDIF data fork CRC** for a full data-fork scan; AEA authentication remains enabled in both modes.
 
 ## 빌드 및 Actions
 

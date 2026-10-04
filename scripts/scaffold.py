@@ -26,9 +26,17 @@ template = (root / 'scripts/templates/MainActivity.kt').read_text()
 activity.write_text(template.replace('__PACKAGE__', package))
 
 
+def configure_macos(info):
+    info.pop('com.apple.security.files.user-selected.read-only', None)
+    info.update({
+        'com.apple.security.network.client': True,
+        'com.apple.security.files.user-selected.read-write': True,
+    })
+
+
 for name in ('DebugProfile.entitlements', 'Release.entitlements'):
     ent = app / 'macos/Runner' / name
-    write_plist(ent, lambda info: info.update({'com.apple.security.network.client': True}))
+    write_plist(ent, configure_macos)
 info = app / 'ios/Runner/Info.plist'
 write_plist(info, configure_ios)
 

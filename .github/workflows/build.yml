@@ -82,7 +82,10 @@ jobs:
         run: |
           APP=$(find app/build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)
           cp app/native/libwallpaper_core.dylib "$APP/Contents/Frameworks/"
-          codesign --force --deep --sign - "$APP"
+          codesign --force --sign - "$APP/Contents/Frameworks/libwallpaper_core.dylib"
+          codesign --force --sign - --entitlements app/macos/Runner/Release.entitlements "$APP"
+          codesign --verify --deep --strict "$APP"
+          python3 scripts/validate_macos.py "$APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" macOS.zip
       - uses: actions/upload-artifact@v4
         if: matrix.platform == 'macos'

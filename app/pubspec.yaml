@@ -1,7 +1,7 @@
 name: ipsw_wallpaper_extractor
 description: Extract original wallpaper resources from Apple IPSWs on your device.
 publish_to: none
-version: 0.2.3+5
+version: 0.2.4+6
 environment:
   sdk: '>=3.8.0 <4.0.0'
 dependencies:

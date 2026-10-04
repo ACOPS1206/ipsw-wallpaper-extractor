@@ -6,7 +6,7 @@ import sys
 if len(sys.argv) != 2:
     raise SystemExit('Usage: python3 scripts/validate_macos.py <signed.app>')
 result = subprocess.run(
-    ['codesign', '-d', '--entitlements', '-', sys.argv[1]],
+    ['codesign', '-d', '--entitlements', '-', '--xml', sys.argv[1]],
     check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
 )
 info = plistlib.loads(result.stdout)

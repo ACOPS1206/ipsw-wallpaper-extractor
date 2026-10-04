@@ -1,5 +1,6 @@
 """Generate platform runners with the installed Flutter, preserving application source."""
 import os, pathlib, shutil, subprocess, tempfile
+from plist_config import configure_ios, write_plist
 root = pathlib.Path(__file__).resolve().parents[1]
 app = root / 'app'
 flutter = shutil.which('flutter') or shutil.which('flutter.bat') or 'flutter'
@@ -20,15 +21,9 @@ manifest.write_text(text)
 
 for name in ('DebugProfile.entitlements', 'Release.entitlements'):
     ent = app / 'macos/Runner' / name
-    text = ent.read_text()
-    if 'com.apple.security.network.client' not in text:
-        text = text.replace('</dict>', '<key>com.apple.security.network.client</key><true/>\n</dict>')
-    ent.write_text(text)
+    write_plist(ent, lambda info: info.update({'com.apple.security.network.client': True}))
 info = app / 'ios/Runner/Info.plist'
-text = info.read_text()
-if 'UIFileSharingEnabled' not in text:
-    text = text.replace('</dict>', '<key>UIFileSharingEnabled</key><true/>\n<key>LSSupportsOpeningDocumentsInPlace</key><true/>\n</dict>')
-info.write_text(text)
+write_plist(info, configure_ios)
 
 for platform, library in [('linux', 'libwallpaper_core.so'), ('windows', 'wallpaper_core.dll')]:
     cmake = app / platform / 'CMakeLists.txt'

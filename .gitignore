@@ -16,3 +16,4 @@ app/README.md
 *.aea
 *.tendies
 *.zip
+__pycache__/

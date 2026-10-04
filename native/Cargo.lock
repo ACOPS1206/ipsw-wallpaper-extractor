@@ -1885,6 +1885,7 @@ dependencies = [
  "aea-tools",
  "anyhow",
  "base64 0.22.1",
+ "crc32fast",
  "dpp",
  "hex",
  "hpke",

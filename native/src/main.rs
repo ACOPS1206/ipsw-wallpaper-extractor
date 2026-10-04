@@ -5,6 +5,9 @@ fn main() {
     });
     match wallpaper_core::run_sync(&request) {
         Ok(value) => println!("{}", value),
-        Err(error) => { eprintln!("{error:#}"); std::process::exit(1); }
+        Err(error) => {
+            eprintln!("{error:#}");
+            std::process::exit(1);
+        }
     }
 }

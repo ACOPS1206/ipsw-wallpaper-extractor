@@ -1,15 +1,16 @@
 """Generate platform runners with the installed Flutter, preserving application source."""
-import pathlib, shutil, subprocess, tempfile
+import os, pathlib, shutil, subprocess, tempfile
 root = pathlib.Path(__file__).resolve().parents[1]
 app = root / 'app'
+flutter = shutil.which('flutter') or shutil.which('flutter.bat') or 'flutter'
 with tempfile.TemporaryDirectory() as temp:
     project = pathlib.Path(temp) / 'runner'
-    subprocess.run(['flutter', 'create', '--no-pub', '--platforms=android,ios,macos,windows,linux', '--org', 'dev.acops', '--project-name', 'ipsw_wallpaper_extractor', str(project)], check=True)
+    subprocess.run([flutter, 'create', '--no-pub', '--platforms=android,ios,macos,windows,linux', '--org', 'dev.acops', '--project-name', 'ipsw_wallpaper_extractor', str(project)], check=True, shell=os.name == 'nt')
     for platform in ('android', 'ios', 'macos', 'windows', 'linux'):
         dest = app / platform
         if not dest.exists():
             shutil.copytree(project / platform, dest)
-subprocess.run(['flutter', 'pub', 'get'], cwd=app, check=True)
+subprocess.run([flutter, 'pub', 'get'], cwd=app, check=True, shell=os.name == 'nt')
 
 manifest = app / 'android/app/src/main/AndroidManifest.xml'
 text = manifest.read_text()

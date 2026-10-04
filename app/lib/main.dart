@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'catalog.dart';
 import 'core.dart';
+import 'resource_picker.dart';
 
 void main() => runApp(const WallpaperApp());
 
@@ -56,7 +57,8 @@ class _HomeState extends State<Home> {
   String? engineError, input, archive, device, deviceName, firmwareUrl, board;
   Map<String, dynamic>? info;
   List<dynamic> devices = [], firmwares = [], assets = [], warnings = [];
-  bool busy = false, saving = false, verifyDisk = false;
+  bool busy = false, saving = false, verifyDisk = false, flatExport = false;
+  List<Map<String, dynamic>> indexed = [];
   int? job;
   String status = 'idle', nativeStage = 'Preparing', failure = '';
   double? progress;
@@ -70,6 +72,7 @@ class _HomeState extends State<Home> {
       case 'idle': return t('IPSW 파일을 선택하거나 Apple CDN에서 다운로드하세요.', 'Open an IPSW file or download one from Apple CDN.');
       case 'ready': return t('목록을 불러왔습니다.', 'Catalog loaded.');
       case 'inspected': return t('파일 확인 완료', 'File inspected.');
+      case 'indexed': return t('${indexed.length}개 리소스 목록을 준비했습니다.', 'Indexed ${indexed.length} resources.');
       case 'extracted': return t('${assets.length}개 원본 리소스를 추출했습니다.', 'Extracted ${assets.length} original resources.');
       case 'cancelled': return t('작업을 취소했습니다.', 'Operation cancelled.');
       case 'error': return t('작업 실패: $failure', 'Operation failed: $failure');
@@ -87,6 +90,7 @@ class _HomeState extends State<Home> {
       'Opening authenticated Apple archive': 'Apple 암호화 아카이브 여는 중', 'Opening filesystem': '파일 시스템 여는 중',
       'Packaging extracted resources': '추출한 리소스 묶는 중', 'Packaging resource': '리소스 묶는 중',
     };
+    if (value.startsWith('Indexing ')) return '목록 인덱싱 중: ${value.substring(9)}';
     if (value.startsWith('Preparing resource ')) return '리소스 검색·준비 중: ${value.substring(19)}';
     if (value.startsWith('Extracting ')) return '추출 중: ${value.substring(11)}';
     return translations[value] ?? value;
@@ -113,7 +117,7 @@ class _HomeState extends State<Home> {
     } finally { if (mounted) setState(() { busy = false; job = null; }); }
   }
   Future<void> inspect(String path) async {
-    setState(() { input = path; archive = null; assets = []; warnings = []; info = null; board = null; });
+    setState(() { input = path; indexed = []; archive = null; assets = []; warnings = []; info = null; board = null; });
     final result = await run({'op': 'inspect', 'input': path});
     if (result != null && mounted) setState(() { info = Map<String, dynamic>.from(result as Map); status = 'inspected'; });
   }
@@ -126,14 +130,38 @@ class _HomeState extends State<Home> {
       await inspect(path);
     } catch (e) { toast(t('파일을 열지 못했습니다: $e', 'Could not open file: $e')); }
   }
-  Future<void> extract() async {
+  Map<String, dynamic> extractionRequest(String op) => {'op': op, 'input': input, 'verifyDisk': verifyDisk, if (board != null) 'board': board, if (keyController.text.trim().isNotEmpty) 'aeaKey': keyController.text.trim()};
+  Future<void> selectResources() async {
+    final previewFolders = <String>[];
     try {
+      if (indexed.isEmpty) {
+        final result = await run(extractionRequest('index'));
+        if (result == null || !mounted) return;
+        setState(() { indexed = (result['assets'] as List).map((a) => Map<String, dynamic>.from(a as Map)).toList(); status = 'indexed'; });
+      }
+      if (!mounted) return;
+      final choice = await showDialog<ResourceChoice>(context: context, barrierDismissible: false, builder: (context) => ResourcePicker(resources: indexed, korean: widget.korean, initialFlat: flatExport, preview: (resource) async {
+        final base = await getTemporaryDirectory();
+        final folder = p.join(base.path, 'wallpaper-preview-${DateTime.now().microsecondsSinceEpoch}');
+        previewFolders.add(folder);
+        final result = await run({...extractionRequest('preview'), 'output': folder, 'selected': [resource['id']]});
+        if (result == null) return null;
+        final items = result['report']['assets'] as List;
+        return p.join(folder, items.single['path'] as String);
+      }));
+      if (choice == null || !mounted) return;
+      setState(() => flatExport = choice.flat);
       final base = await getApplicationDocumentsDirectory();
       if (!mounted) return;
       final folder = p.join(base.path, 'wallpapers-${DateTime.now().millisecondsSinceEpoch}');
-      final result = await run({'op': 'extract', 'input': input, 'output': folder, 'verifyDisk': verifyDisk, if (board != null) 'board': board, if (keyController.text.trim().isNotEmpty) 'aeaKey': keyController.text.trim()});
+      final result = await run({...extractionRequest('extract'), 'output': folder, 'selected': choice.ids, 'flat': choice.flat});
       if (result != null && mounted) setState(() { archive = result['archive'] as String; assets = result['report']['assets'] as List<dynamic>; warnings = result['report']['warnings'] as List<dynamic>; status = 'extracted'; });
     } catch (e) { toast(t('추출 실패: $e', 'Extraction failed: $e')); }
+    finally {
+      for (final folder in previewFolders) {
+        try { final dir = Directory(folder); if (await dir.exists()) await dir.delete(recursive: true); } catch (_) { /* OS can clean temporary previews later. */ }
+      }
+    }
   }
   Future<void> selectDevice() async {
     if (devices.isEmpty) {
@@ -227,8 +255,8 @@ class _HomeState extends State<Home> {
           const SizedBox(height: 8), Text('iOS / iPadOS ${info!['version'] ?? ''} · ${info!['build'] ?? ''}'),
           Text("${t('파일 시스템', 'Filesystem')} ${firmwareSize(info!['imageBytes'])}"),
           Text(t('저장 방식에 따라 추가 임시 공간이 필요할 수 있습니다.', 'Additional temporary space may be needed depending on the archive format.')),
-          if ((info!['boards'] as List).isNotEmpty) DropdownButtonFormField<String>(key: ValueKey(input), initialValue: board, decoration: InputDecoration(labelText: t('기기 보드 (기본: 전체)', 'Device board (default: all)')), items: [DropdownMenuItem<String>(value: null, child: Text(t('전체', 'All'))), for (final b in info!['boards'] as List) DropdownMenuItem(value: b as String, child: Text(b))], onChanged: enabled ? (v) => setState(() => board = v) : null),
-          const SizedBox(height: 12), FilledButton.icon(onPressed: enabled ? extract : null, icon: const Icon(Icons.unarchive), label: Text(t('원본 배경 추출', 'Extract original wallpapers'))),
+          if ((info!['boards'] as List).isNotEmpty) DropdownButtonFormField<String>(key: ValueKey(input), initialValue: board, decoration: InputDecoration(labelText: t('기기 보드 (기본: 전체)', 'Device board (default: all)')), items: [DropdownMenuItem<String>(value: null, child: Text(t('전체', 'All'))), for (final b in info!['boards'] as List) DropdownMenuItem(value: b as String, child: Text(b))], onChanged: enabled ? (v) => setState(() { board = v; indexed = []; }) : null),
+          const SizedBox(height: 12), FilledButton.icon(onPressed: enabled ? selectResources : null, icon: const Icon(Icons.checklist), label: Text(indexed.isEmpty ? t('목록 인덱싱 · 추출할 파일 선택', 'Index and choose resources') : t('리소스 선택 · 추출', 'Choose and extract resources'))),
         ],
       ]),
       panel(t('Apple CDN 다운로더', 'Apple CDN downloader'), [
@@ -249,7 +277,7 @@ class _HomeState extends State<Home> {
         const SizedBox(height: 12),
         Text(t('모델·버전 목록: IPSW.me · 실제 파일: Apple CDN\n서명 종료된 버전도 추출할 수 있습니다. 완료 후 ‘IPSW 파일에 저장’으로 내보내세요.', 'Catalog: IPSW.me · Files: Apple CDN\nUnsigned versions can also be extracted. After downloading, use “Save IPSW to Files” to export.')),
       ]),
-      ExpansionTile(title: Text(t('고급 설정', 'Advanced settings')), children: [SwitchListTile(value: verifyDisk, onChanged: enabled ? (value) => setState(() => verifyDisk = value) : null, title: Text(t('UDIF 디스크 전체 CRC 검증', 'Verify entire UDIF data fork CRC')), subtitle: Text(t('기본: 필요한 블록만 읽기. 전체 검증을 켜면 디스크 전체를 읽어 더 오래 걸립니다. AEA 인증은 항상 유지됩니다.', 'Default: read required blocks only. Full verification reads the entire disk and takes longer. AEA authentication stays enabled.'))), Padding(padding: const EdgeInsets.all(16), child: TextField(controller: keyController, enabled: enabled, obscureText: true, decoration: InputDecoration(labelText: t('AEA 대칭키 (선택)', 'AEA symmetric key (optional)'), helperText: t('기본값: Apple의 공개 FCS 키 자동 조회', 'Default: retrieve Apple’s public FCS key automatically'))))]),
+      ExpansionTile(title: Text(t('고급 설정', 'Advanced settings')), children: [SwitchListTile(value: verifyDisk, onChanged: enabled ? (value) => setState(() => verifyDisk = value) : null, title: Text(t('UDIF 디스크 전체 CRC 검증', 'Verify entire UDIF data fork CRC')), subtitle: Text(t('기본: 필요한 블록만 읽기. 전체 검증을 켜면 디스크 전체를 읽어 더 오래 걸립니다. AEA 인증은 항상 유지됩니다.', 'Default: read required blocks only. Full verification reads the entire disk and takes longer. AEA authentication stays enabled.'))), Padding(padding: const EdgeInsets.all(16), child: TextField(controller: keyController, onChanged: (_) => setState(() => indexed = []), enabled: enabled, obscureText: true, decoration: InputDecoration(labelText: t('AEA 대칭키 (선택)', 'AEA symmetric key (optional)'), helperText: t('기본값: Apple의 공개 FCS 키 자동 조회', 'Default: retrieve Apple’s public FCS key automatically'))))]),
       panel(t('진행 상태', 'Progress'), [Text(saving ? t('파일 저장 중…', 'Saving file…') : stage), if (busy || saving) ...[const SizedBox(height: 12), LinearProgressIndicator(value: saving ? null : progress), if (busy && progress != null) Text(t('현재 단계 ${(progress! * 100).toStringAsFixed(1)}%', 'Current stage ${(progress! * 100).toStringAsFixed(1)}%')), if (busy) TextButton(onPressed: job == null ? null : () => core!.cancel(job!), child: Text(t('취소', 'Cancel')))]]),
       if (archive != null) panel(t('추출 결과', 'Extracted resources'), [
         FilledButton.icon(onPressed: !busy && !saving ? () => saveFile(archive!) : null, icon: const Icon(Icons.ios_share), label: Text(t('ZIP 저장 / 공유', 'Save / share ZIP'))),

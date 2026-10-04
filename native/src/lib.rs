@@ -52,7 +52,7 @@ pub fn required<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
 }
 pub fn execute(v: &Value, task: &Task) -> Result<Value> {
     match required(v, "op")? {
-        "extract" => extract::extract(v, task),
+        "extract" | "index" | "preview" => extract::extract(v, task),
         "inspect" => extract::inspect(v),
         "devices" => network::devices(task),
         "firmwares" => network::firmwares(required(v, "device")?, task),

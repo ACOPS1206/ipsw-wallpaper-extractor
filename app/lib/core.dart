@@ -51,11 +51,15 @@ class NativeCore {
         onProgress(state);
         if (state['status'] == 'complete') return state['result'];
         if (state['status'] == 'error') throw StateError(state['error'] as String);
-        if (state['status'] == 'cancelled') throw StateError('작업을 취소했습니다.');
+        if (state['status'] == 'cancelled') throw const TaskCancelled();
       }
     } finally {
       call({'op': 'forget', 'id': id});
     }
   }
   void cancel(int id) => call({'op': 'cancel', 'id': id});
+}
+
+class TaskCancelled implements Exception {
+  const TaskCancelled();
 }

@@ -8,7 +8,22 @@ IPSW 파일에서 Apple 배경 **원본 리소스**를 추출하는 Flutter + Ru
 2. 파일 시스템 이미지와 버전을 확인하고 원본 배경 추출을 누릅니다.
 3. 추출한 리소스와 경로·크기·SHA-256이 기록된 `report.json`을 ZIP으로 저장하거나 공유합니다.
 
-다운로더는 IPSW.me의 모델·버전 메타데이터를 이용하며 파일은 HTTPS Apple CDN에서만 받습니다. 직접 Apple CDN URL을 입력할 수도 있습니다. 취소·네트워크 중단 시 부분 파일을 유지하고 같은 항목을 다시 선택하면 이어받습니다. 카탈로그에 SHA-1이 제공되면 다운로드 후 검증합니다. 직접 URL에는 카탈로그 체크섬 검증이 없습니다. 추출을 위해 펌웨어가 서명 중일 필요는 없습니다.
+다운로더는 IPSW.me의 모델·버전 메타데이터를 이용하며 파일은 HTTPS Apple CDN에서만 받습니다. 취소·네트워크 중단 시 부분 파일을 유지하고 같은 항목을 다시 선택하면 이어받습니다. 카탈로그에 SHA-1이 제공되면 다운로드 후 검증합니다. 추출을 위해 펌웨어가 서명 중일 필요는 없습니다.
+
+기기 선택은 iPhone/iPad 분류와 모델명·식별자 검색을 제공합니다. 기기는 최신 하드웨어순, 버전은 최신순이며 서명 상태와 파일 크기를 표시합니다. 직접 링크 입력란은 제공하지 않습니다.
+
+완료한 IPSW는 **IPSW 파일에 저장** 버튼으로 내보냅니다. Android는 시스템 문서 저장 창, iOS는 공유 창의 **파일에 저장**, 데스크톱은 저장 경로 선택 창을 사용합니다. 취소된 부분 다운로드는 내보내지 않습니다. 파일 복사는 스트리밍으로 처리하며 저장 위치에 원본 크기만큼의 공간이 필요합니다.
+
+상단 언어 메뉴에서 **한국어 / English**를 선택할 수 있습니다. 최초 실행은 시스템 언어를 따르고 선택한 언어를 다음 실행에도 유지합니다.
+
+## English quick start
+
+1. Open a local IPSW, or choose an iPhone/iPad using the searchable device picker.
+2. Select a firmware version (newest first), check its signing status and size, then download from Apple CDN.
+3. Use **Save IPSW to Files** to keep a copy. On iOS choose **Save to Files** in the share sheet; Android and desktop show a save dialog.
+4. Select **Extract original wallpapers**, then save the resulting ZIP. Keep the app in the foreground during downloads, extraction and file copying.
+
+Use the language menu in the app bar to switch between English and Korean. Original resources are extracted on-device; procedural wallpaper rendering remains outside the current scope.
 
 ## 지원 범위와 현재 한계
 

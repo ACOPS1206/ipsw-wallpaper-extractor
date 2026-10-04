@@ -19,6 +19,13 @@ if 'android.permission.INTERNET' not in text:
     text = text.replace('<application', '<uses-permission android:name="android.permission.INTERNET"/>\n    <application', 1)
 manifest.write_text(text)
 
+# Preserve the package chosen by Flutter while installing streaming Android SAF export.
+activity = next((app / 'android/app/src/main/kotlin').rglob('MainActivity.kt'))
+package = next(line.split()[1] for line in activity.read_text().splitlines() if line.startswith('package '))
+template = (root / 'scripts/templates/MainActivity.kt').read_text()
+activity.write_text(template.replace('__PACKAGE__', package))
+
+
 for name in ('DebugProfile.entitlements', 'Release.entitlements'):
     ent = app / 'macos/Runner' / name
     write_plist(ent, lambda info: info.update({'com.apple.security.network.client': True}))
